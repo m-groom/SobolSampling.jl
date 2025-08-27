@@ -20,17 +20,13 @@ using Random
 
         # Test custom construction with all parameters
         rng = Random.MersenneTwister(123)
-        tuning = SobolSequence(
-            skip = 15,
-            random_shift = true,
-            rng = rng
-        )
+        tuning = SobolSequence(skip=15, random_shift=true, rng=rng)
         @test tuning.skip == 15
         @test tuning.random_shift == true
         @test tuning.rng === rng
 
         # Test construction with integer seed
-        tuning = SobolSequence(rng = 42)
+        tuning = SobolSequence(rng=42)
         @test tuning.rng isa Random.MersenneTwister
     end
 
@@ -40,7 +36,7 @@ using Random
 
     @testset "clean! Method" begin
         # Test negative skip correction
-        tuning = @test_logs (:warn, r"`skip` must be nonnegative") SobolSequence(skip = -5)
+        tuning = @test_logs (:warn, r"`skip` must be nonnegative") SobolSequence(skip=-5)
         @test tuning.skip == 0  # Should be corrected during construction
 
         # Test invalid symbol for skip
@@ -51,11 +47,11 @@ using Random
         @test occursin("must be :auto or a nonnegative integer", msg)
 
         # Test valid skip (non-negative integer)
-        tuning = SobolSequence(skip = 31)
+        tuning = SobolSequence(skip=31)
         @test tuning.skip == 31
 
         # Test valid :auto skip
-        tuning = SobolSequence(skip = :auto)
+        tuning = SobolSequence(skip=:auto)
         msg = MLJTuning.clean!(tuning)
         @test tuning.skip == :auto
         @test msg == ""
@@ -174,8 +170,7 @@ using Random
             param3::String
         end
 
-        MockModel(; param1=0.5, param2=2, param3="a") =
-            MockModel(param1, param2, param3)
+        MockModel(; param1=0.5, param2=2, param3="a") = MockModel(param1, param2, param3)
 
         # Define ranges
         r1 = range(Float64, :param1, lower=0.0, upper=1.0)
@@ -227,9 +222,7 @@ using Random
 
         # Create a mock state with models and fields
         state = (
-            models = [],
-            fields = [:x1, :x2, :x3],
-            parameter_scales = [:linear, :log, :linear]
+            models=[], fields=[:x1, :x2, :x3], parameter_scales=[:linear, :log, :linear]
         )
 
         # Test tuning_report
@@ -331,7 +324,9 @@ using Random
         # Bounds are computed in scale space (after transform)
 
         # Test upper unbounded (lower finite, upper infinite)
-        r_upper_inf = range(Float64, :x, lower=0.0, upper=Inf, origin=1.0, unit=1.0, scale=:linear)
+        r_upper_inf = range(
+            Float64, :x, lower=0.0, upper=Inf, origin=1.0, unit=1.0, scale=:linear
+        )
         bounds, kinds, card = SobolSampling._scaled_bounds_and_kinds([r_upper_inf])
         @test isfinite(bounds[1][1]) && isfinite(bounds[1][2])
         # When lower is finite and upper is infinite: (transform(lower), transform(lower) + 2*unit)
@@ -339,7 +334,9 @@ using Random
         @test bounds[1] == (0.0, 2.0)
 
         # Test lower unbounded (lower infinite, upper finite)
-        r_lower_inf = range(Float64, :x, lower=-Inf, upper=10.0, origin=5.0, unit=2.0, scale=:linear)
+        r_lower_inf = range(
+            Float64, :x, lower=(-Inf), upper=10.0, origin=5.0, unit=2.0, scale=:linear
+        )
         bounds, kinds, card = SobolSampling._scaled_bounds_and_kinds([r_lower_inf])
         @test isfinite(bounds[1][1]) && isfinite(bounds[1][2])
         # When lower is infinite and upper is finite: (transform(upper) - 2*unit, transform(upper))
@@ -347,7 +344,9 @@ using Random
         @test bounds[1] == (6.0, 10.0)
 
         # Test fully unbounded (both lower and upper infinite)
-        r_both_inf = range(Float64, :x, lower=-Inf, upper=Inf, origin=0.0, unit=5.0, scale=:linear)
+        r_both_inf = range(
+            Float64, :x, lower=(-Inf), upper=Inf, origin=0.0, unit=5.0, scale=:linear
+        )
         bounds, kinds, card = SobolSampling._scaled_bounds_and_kinds([r_both_inf])
         @test isfinite(bounds[1][1]) && isfinite(bounds[1][2])
         # When both are infinite: (transform(origin) - unit, transform(origin) + unit)
@@ -398,7 +397,5 @@ using Random
         # Test log scale with zero lower bound
         r_log_zero = range(Float64, :x, lower=0.0, upper=100.0, scale=:log)
         @test_throws ArgumentError SobolSampling._scaled_bounds_and_kinds([r_log_zero])
-
     end
-
 end

@@ -8,6 +8,4 @@ using Random
 include("main.jl")
 export SobolSequence
 
-
-
 end # module SobolSampling
