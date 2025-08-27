@@ -1,345 +1,404 @@
-# using Test
-# using SobolSampling
-# using MLJBase
-# using MLJTuning
-# using Sobol
-# using Random
-
-# TODO: update tests to be compatible code in with src/main.jl
-
-# @testset "SobolSampling.jl Tests" begin
-
-#     # ========================================================================
-#     # Test SobolSearch Construction
-#     # ========================================================================
-
-#     @testset "SobolSearch Constructor" begin
-#         # Test default construction
-#         tuning = SobolSearch()
-#         @test tuning.skip_initial == 0
-#         @test tuning.bounded == true
-#         @test tuning.optimize_skip == true
-#         @test tuning.deterministic == true
-
-#         # Test custom construction
-#         tuning = SobolSearch(
-#             skip_initial = 15,
-#             bounded = false,
-#             optimize_skip = false,
-#             deterministic = false
-#         )
-#         @test tuning.skip_initial == 15
-#         @test tuning.bounded == false
-#         @test tuning.optimize_skip == false
-#         @test tuning.deterministic == false
-#     end
-
-#     # ========================================================================
-#     # Test clean! Method
-#     # ========================================================================
-
-#     @testset "clean! Method" begin
-#         # Test negative skip_initial correction
-#         tuning = SobolSearch(skip_initial = -5)
-#         msg = MLJTuning.clean!(tuning)
-#         @test tuning.skip_initial == 0
-#         @test occursin("non-negative", msg)
-
-#         # Test skip_initial adjustment to 2^m - 1 form
-#         tuning = SobolSearch(skip_initial = 10)
-#         msg = MLJTuning.clean!(tuning)
-#         @test tuning.skip_initial in [7, 15]  # Nearest 2^m - 1 values
-#         @test occursin("2^m - 1", msg)
-
-#         # Test valid skip_initial (already 2^m - 1)
-#         tuning = SobolSearch(skip_initial = 31)  # 2^5 - 1
-#         msg = MLJTuning.clean!(tuning)
-#         @test tuning.skip_initial == 31
-#         @test msg == ""
-#     end
-
-#     # ========================================================================
-#     # Test Range Processing
-#     # ========================================================================
-
-#     @testset "Range Processing" begin
-#         # Test continuous range
-#         r1 = range(Float64, :x1, lower=0.0, upper=1.0)
-#         ranges, bounds, cat_idx, disc_idx, scales, fields =
-#             SobolSampling.process_ranges([r1])
-
-#         @test length(ranges) == 1
-#         @test bounds[1] == (0.0, 1.0)
-#         @test isempty(cat_idx)
-#         @test isempty(disc_idx)
-#         @test scales[1] == :linear
-
-#         # Test discrete range
-#         r2 = range(Int, :x2, lower=1, upper=10)
-#         ranges, bounds, cat_idx, disc_idx, scales, fields =
-#             SobolSampling.process_ranges([r2])
-
-#         @test length(ranges) == 1
-#         @test bounds[1] == (1.0, 10.0)
-#         @test isempty(cat_idx)
-#         @test 1 in disc_idx
-
-#         # Test categorical range
-#         r3 = range(String, :x3, values=["a", "b", "c"])
-#         ranges, bounds, cat_idx, disc_idx, scales, fields =
-#             SobolSampling.process_ranges([r3])
-
-#         @test length(ranges) == 1
-#         @test bounds[1] == (0.0, 1.0)
-#         @test 1 in cat_idx
-#         @test isempty(disc_idx)
-
-#         # Test mixed ranges
-#         mixed = [r1, r2, r3]
-#         ranges, bounds, cat_idx, disc_idx, scales, fields =
-#             SobolSampling.process_ranges(mixed)
-
-#         @test length(ranges) == 3
-#         @test length(bounds) == 3
-#         @test cat_idx == [3]
-#         @test disc_idx == [2]
-#         @test length(scales) == 3
-#     end
-
-#     # ========================================================================
-#     # Test Sobol Point Scaling
-#     # ========================================================================
-
-#     @testset "Sobol Point Scaling" begin
-#         # Create a simple state for testing
-#         r1 = range(Float64, :x1, lower=0.0, upper=10.0)
-#         r2 = range(Int, :x2, lower=1, upper=5)
-#         r3 = range(String, :x3, values=["a", "b", "c"])
-
-#         ranges, bounds, cat_idx, disc_idx, scales, fields =
-#             SobolSampling.process_ranges([r1, r2, r3])
-
-#         state = SobolSampling.SobolSearchState(
-#             nothing, ranges, bounds, cat_idx, disc_idx, scales, fields, 0, 3
-#         )
-
-#         # Test scaling with point in [0,1]^3
-#         point = [0.5, 0.5, 0.33]
-#         scaled = SobolSampling.scale_sobol_point(point, state)
-
-#         @test scaled[1] ≈ 5.0  # Continuous: 0 + 0.5 * 10
-#         @test scaled[2] in 1:5  # Discrete integer
-#         @test scaled[3] in ["a", "b", "c"]  # Categorical
-
-#         # Test boundary cases
-#         point_low = [0.0, 0.0, 0.0]
-#         scaled_low = SobolSampling.scale_sobol_point(point_low, state)
-#         @test scaled_low[1] ≈ 0.0
-#         @test scaled_low[2] == 1
-#         @test scaled_low[3] == "a"
-
-#         point_high = [1.0, 1.0, 0.99]
-#         scaled_high = SobolSampling.scale_sobol_point(point_high, state)
-#         @test scaled_high[1] ≈ 10.0
-#         @test scaled_high[2] == 5
-#         @test scaled_high[3] == "c"
-#     end
-
-#     # ========================================================================
-#     # Test default_n Method
-#     # ========================================================================
-
-#     @testset "default_n Method" begin
-#         tuning = SobolSearch()
-
-#         # Test with different dimensions
-#         r1 = [range(Float64, Symbol("x$i"), lower=0.0, upper=1.0) for i in 1:2]
-#         @test MLJTuning.default_n(tuning, r1) == 64  # 2^6 for 2D
-
-#         r2 = [range(Float64, Symbol("x$i"), lower=0.0, upper=1.0) for i in 1:5]
-#         @test MLJTuning.default_n(tuning, r2) == 256  # 2^8 for 5D
-
-#         r3 = [range(Float64, Symbol("x$i"), lower=0.0, upper=1.0) for i in 1:15]
-#         @test MLJTuning.default_n(tuning, r3) == 1024  # 2^10 for 15D
-
-#         r4 = [range(Float64, Symbol("x$i"), lower=0.0, upper=1.0) for i in 1:25]
-#         @test MLJTuning.default_n(tuning, r4) == 2048  # 2^11 for 25D
-#     end
-
-#     # ========================================================================
-#     # Integration Test with Mock Model
-#     # ========================================================================
-
-#     @testset "Integration with MLJTuning" begin
-#         # Create a simple mock model
-#         mutable struct MockModel <: MLJBase.Deterministic
-#             param1::Float64
-#             param2::Int
-#             param3::String
-#         end
-
-#         MockModel(; param1=0.5, param2=2, param3="a") =
-#             MockModel(param1, param2, param3)
-
-#         # Define ranges
-#         r1 = range(Float64, :param1, lower=0.0, upper=1.0)
-#         r2 = range(Int, :param2, lower=1, upper=5)
-#         r3 = range(String, :param3, values=["a", "b", "c"])
-#         ranges = [r1, r2, r3]
-
-#         # Create tuning strategy
-#         tuning = SobolSearch(skip_initial=0, bounded=false)
-
-#         # Test setup
-#         model = MockModel()
-#         n = 16
-#         state = MLJTuning.setup(tuning, model, ranges, n, 0)
-
-#         @test state isa SobolSampling.SobolSearchState
-#         @test state.dimension == 3
-#         @test state.generated_count == 0
-#         @test state.sobol_seq isa SobolSeq
-
-#         # Test model generation
-#         models, new_state = MLJTuning.models(tuning, model, [], state, 4, 0)
-
-#         @test length(models) == 4
-#         @test all(m isa MockModel for m in models)
-#         @test new_state.generated_count == 4
-
-#         # Check that generated models have valid parameters
-#         for m in models
-#             @test 0.0 <= m.param1 <= 1.0
-#             @test m.param2 in 1:5
-#             @test m.param3 in ["a", "b", "c"]
-#         end
-
-#         # Test another batch
-#         models2, new_state2 = MLJTuning.models(tuning, model, [], new_state, 4, 0)
-#         @test length(models2) == 4
-#         @test new_state2.generated_count == 8
-#     end
-
-#     # ========================================================================
-#     # Test extras and tuning_report Methods
-#     # ========================================================================
-
-#     @testset "extras and tuning_report Methods" begin
-#         tuning = SobolSearch()
-
-#         # Create a simple state
-#         state = SobolSampling.SobolSearchState(
-#             SobolSeq(3), [], [], [3], [2], [], [:x1, :x2, :x3], 10, 3
-#         )
-
-#         # Test extras
-#         extras = MLJTuning.extras(tuning, [], state, nothing)
-#         @test extras.sobol_index == 10
-#         @test extras.dimension == 3
-#         @test extras.using_bounds == true
-#         @test extras.has_categorical == true
-#         @test extras.has_discrete == true
-
-#         # Test tuning_report
-#         report = MLJTuning.tuning_report(tuning, [], state)
-#         @test report.total_generated == 10
-#         @test report.dimensions == 3
-#         @test report.categorical_params == 1
-#         @test report.discrete_params == 1
-#         @test report.continuous_params == 1
-#         @test report.parameter_names == [:x1, :x2, :x3]
-#     end
-
-#     # ========================================================================
-#     # Test Bounded vs Unbounded Mode
-#     # ========================================================================
-
-#     @testset "Bounded vs Unbounded Mode" begin
-#         # Test bounded mode (no categorical parameters)
-#         r1 = range(Float64, :x1, lower=0.0, upper=10.0)
-#         r2 = range(Float64, :x2, lower=1.0, upper=5.0)
-#         ranges = [r1, r2]
-
-#         tuning_bounded = SobolSearch(bounded=true)
-#         model = NamedTuple()  # Mock model
-#         state = MLJTuning.setup(tuning_bounded, model, ranges, 16, 0)
-
-#         @test state.sobol_seq isa SobolSeq
-#         @test length(state.sobol_seq.lb) == 2
-#         @test state.sobol_seq.lb ≈ [0.0, 1.0]
-#         @test state.sobol_seq.ub ≈ [10.0, 5.0]
-
-#         # Test unbounded mode (forced)
-#         tuning_unbounded = SobolSearch(bounded=false)
-#         state = MLJTuning.setup(tuning_unbounded, model, ranges, 16, 0)
-
-#         @test state.sobol_seq isa SobolSeq
-#         @test isempty(state.sobol_seq.lb)  # Unit hypercube mode
-#     end
-
-#     # ========================================================================
-#     # Test Skip Optimization
-#     # ========================================================================
-
-#     @testset "Skip Optimization" begin
-#         r = range(Float64, :x, lower=0.0, upper=1.0)
-#         model = NamedTuple()
-
-#         # Test with optimize_skip=true
-#         tuning = SobolSearch(optimize_skip=true, skip_initial=0)
-#         state = MLJTuning.setup(tuning, model, [r], 100, 0)
-#         # Should skip 2^6 - 1 = 63 points (largest 2^m - 1 ≤ 50)
-#         @test state.generated_count == 0  # But counter starts at 0
-
-#         # Test with optimize_skip=false
-#         tuning = SobolSearch(optimize_skip=false, skip_initial=7)
-#         state = MLJTuning.setup(tuning, model, [r], 100, 0)
-#         @test state.generated_count == 0  # Counter still starts at 0
-#     end
-
-#     # ========================================================================
-#     # Test Log Scale Support
-#     # ========================================================================
-
-#     @testset "Log Scale Support" begin
-#         # Create range with log scale
-#         r = range(Float64, :x, lower=0.1, upper=100.0, scale=:log)
-#         ranges, bounds, cat_idx, disc_idx, scales, fields =
-#             SobolSampling.process_ranges([r])
-
-#         @test scales[1] == :log
-
-#         state = SobolSampling.SobolSearchState(
-#             nothing, ranges, bounds, cat_idx, disc_idx, scales, fields, 0, 1
-#         )
-
-#         # Test that log scaling works properly
-#         point = [0.5]  # Middle of [0,1]
-#         scaled = SobolSampling.scale_sobol_point(point, state)
-
-#         # On log scale, middle point should be geometric mean
-#         expected = sqrt(0.1 * 100.0)  # ≈ 3.16
-#         @test scaled[1] ≈ expected rtol=0.01
-#     end
-
-#     # ========================================================================
-#     # Test Edge Cases
-#     # ========================================================================
-
-#     @testset "Edge Cases" begin
-#         # Test single parameter
-#         r = range(Float64, :x, lower=0.0, upper=1.0)
-#         tuning = SobolSearch()
-#         model = NamedTuple()
-#         state = MLJTuning.setup(tuning, model, [r], 10, 0)
-
-#         @test state.dimension == 1
-#         models, _ = MLJTuning.models(tuning, model, [], state, 1, 0)
-#         @test length(models) == 1
-
-#         # Test empty range (should handle gracefully)
-#         state = MLJTuning.setup(tuning, model, [], 10, 0)
-#         @test state.dimension == 0
-#     end
-
-# end
+using Test
+using SobolSampling
+using MLJBase
+using MLJTuning
+using Sobol
+using Random
+
+@testset "SobolSampling.jl Tests" begin
+
+    # ========================================================================
+    # Test SobolSequence Construction
+    # ========================================================================
+
+    @testset "SobolSequence Constructor" begin
+        # Test default construction
+        tuning = SobolSequence()
+        @test tuning.skip == :auto
+        @test tuning.random_shift == false
+        @test tuning.rng isa Random.AbstractRNG
+
+        # Test custom construction with all parameters
+        rng = Random.MersenneTwister(123)
+        tuning = SobolSequence(
+            skip = 15,
+            random_shift = true,
+            rng = rng
+        )
+        @test tuning.skip == 15
+        @test tuning.random_shift == true
+        @test tuning.rng === rng
+
+        # Test construction with integer seed
+        tuning = SobolSequence(rng = 42)
+        @test tuning.rng isa Random.MersenneTwister
+    end
+
+    # ========================================================================
+    # Test clean! Method
+    # ========================================================================
+
+    @testset "clean! Method" begin
+        # Test negative skip correction
+        tuning = @test_logs (:warn, r"`skip` must be nonnegative") SobolSequence(skip = -5)
+        @test tuning.skip == 0  # Should be corrected during construction
+
+        # Test invalid symbol for skip
+        tuning = SobolSequence()
+        tuning.skip = :invalid
+        msg = MLJTuning.clean!(tuning)
+        @test tuning.skip == :auto
+        @test occursin("must be :auto or a nonnegative integer", msg)
+
+        # Test valid skip (non-negative integer)
+        tuning = SobolSequence(skip = 31)
+        @test tuning.skip == 31
+
+        # Test valid :auto skip
+        tuning = SobolSequence(skip = :auto)
+        msg = MLJTuning.clean!(tuning)
+        @test tuning.skip == :auto
+        @test msg == ""
+    end
+
+    # ========================================================================
+    # Test Internal Helper Functions
+    # ========================================================================
+
+    @testset "Range Processing Helpers" begin
+        # Test _scaled_bounds_and_kinds for continuous range
+        r1 = range(Float64, :x1, lower=0.0, upper=1.0)
+        bounds, kinds, card = SobolSampling._scaled_bounds_and_kinds([r1])
+
+        @test length(bounds) == 1
+        @test bounds[1] == (0.0, 1.0)
+        @test kinds[1] == :numeric
+        @test card[1] == 0
+
+        # Test integer range
+        r2 = range(Int, :x2, lower=1, upper=10)
+        bounds, kinds, card = SobolSampling._scaled_bounds_and_kinds([r2])
+
+        @test length(bounds) == 1
+        @test bounds[1] == (1.0, 10.0)
+        @test kinds[1] == :numeric
+        @test card[1] == 0
+
+        # Test categorical range
+        r3 = range(String, :x3, values=["a", "b", "c"])
+        bounds, kinds, card = SobolSampling._scaled_bounds_and_kinds([r3])
+
+        @test length(bounds) == 1
+        @test bounds[1] == (0.0, 1.0)  # Placeholder for nominal
+        @test kinds[1] == :nominal
+        @test card[1] == 3
+
+        # Test mixed ranges
+        mixed = [r1, r2, r3]
+        bounds, kinds, card = SobolSampling._scaled_bounds_and_kinds(mixed)
+
+        @test length(bounds) == 3
+        @test kinds == [:numeric, :numeric, :nominal]
+        @test card == [0, 0, 3]
+    end
+
+    @testset "Unit Sobol Matrix Generation" begin
+        # Test basic generation
+        U = SobolSampling._unit_sobol_matrix(2, 10, :auto, false, Random.GLOBAL_RNG)
+        @test size(U) == (10, 2)
+        @test all(0 <= u <= 1 for u in U)
+
+        # Test with random shift
+        rng = Random.MersenneTwister(123)
+        U_shifted = SobolSampling._unit_sobol_matrix(2, 10, :auto, true, rng)
+        @test size(U_shifted) == (10, 2)
+        @test all(0 <= u < 1 for u in U_shifted)
+
+        # Test with explicit skip
+        U_skip = SobolSampling._unit_sobol_matrix(2, 10, 7, false, Random.GLOBAL_RNG)
+        @test size(U_skip) == (10, 2)
+    end
+
+    @testset "Numeric Range Denormalization" begin
+        # Test linear scale
+        r = range(Float64, :x, lower=0.0, upper=10.0)
+        val = SobolSampling._denorm_numeric(r, 0.5, 0.0, 10.0)
+        @test val ≈ 5.0
+
+        # Test integer range
+        r_int = range(Int, :x, lower=1, upper=10)
+        val_int = SobolSampling._denorm_numeric(r_int, 0.5, 1.0, 10.0)
+        @test val_int isa Int
+        @test 1 <= val_int <= 10
+
+        # Test log scale
+        r_log = range(Float64, :x, lower=0.1, upper=100.0, scale=:log)
+        sc = MLJBase.scale(:log)
+        a = transform(MLJBase.Scale, sc, 0.1)
+        b = transform(MLJBase.Scale, sc, 100.0)
+        val_log = SobolSampling._denorm_numeric(r_log, 0.5, a, b)
+        # On log scale, middle point should be geometric mean
+        @test val_log ≈ sqrt(0.1 * 100.0) rtol=0.01
+    end
+
+    @testset "Nominal Index Mapping" begin
+        # Test categorical mapping
+        @test SobolSampling._nominal_index(0.0, 3) == 1
+        @test SobolSampling._nominal_index(0.33, 3) == 1  # floor(0.33*3) + 1 = 1
+        @test SobolSampling._nominal_index(0.66, 3) == 2  # floor(0.66*3) + 1 = 2
+        @test SobolSampling._nominal_index(0.99, 3) == 3  # floor(0.99*3) + 1 = 3
+    end
+
+    # ========================================================================
+    # Test default_n Method
+    # ========================================================================
+
+    @testset "default_n Method" begin
+        tuning = SobolSequence()
+
+        # Test default value
+        r = range(Float64, :x, lower=0.0, upper=1.0)
+        @test MLJTuning.default_n(tuning, r) == 128
+        @test MLJTuning.default_n(tuning, [r]) == 128
+    end
+
+    # ========================================================================
+    # Integration Test with Mock Model
+    # ========================================================================
+
+    @testset "Integration with MLJTuning" begin
+        # Create a simple mock model
+        mutable struct MockModel <: MLJBase.Deterministic
+            param1::Float64
+            param2::Int
+            param3::String
+        end
+
+        MockModel(; param1=0.5, param2=2, param3="a") =
+            MockModel(param1, param2, param3)
+
+        # Define ranges
+        r1 = range(Float64, :param1, lower=0.0, upper=1.0)
+        r2 = range(Int, :param2, lower=1, upper=5)
+        r3 = range(String, :param3, values=["a", "b", "c"])
+        ranges = [r1, r2, r3]
+
+        # Create tuning strategy
+        tuning = SobolSequence(skip=0, random_shift=false)
+
+        # Test setup
+        model = MockModel()
+        n = 16
+        state = MLJTuning.setup(tuning, model, ranges, n, 0)
+
+        # State should contain models, fields, and parameter_scales
+        @test haskey(state, :models)
+        @test haskey(state, :fields)
+        @test haskey(state, :parameter_scales)
+        @test length(state.models) == n
+        @test state.fields == [:param1, :param2, :param3]
+
+        # Test model generation (should return all remaining models)
+        history = []  # Empty history
+        models, new_state = MLJTuning.models(tuning, model, history, state, 4, 0)
+
+        @test length(models) == n  # Should return all models
+        @test all(m isa MockModel for m in models)
+
+        # Check that generated models have valid parameters
+        for m in models
+            @test 0.0 <= m.param1 <= 1.0
+            @test m.param2 in 1:5
+            @test m.param3 in ["a", "b", "c"]
+        end
+
+        # Test with partial history (simulating progress)
+        history = [(model=models[1], measure=[0.1])]
+        remaining_models, _ = MLJTuning.models(tuning, model, history, state, 4, 0)
+        @test length(remaining_models) == n - 1
+    end
+
+    # ========================================================================
+    # Test tuning_report Method
+    # ========================================================================
+
+    @testset "tuning_report Method" begin
+        tuning = SobolSequence()
+
+        # Create a mock state with models and fields
+        state = (
+            models = [],
+            fields = [:x1, :x2, :x3],
+            parameter_scales = [:linear, :log, :linear]
+        )
+
+        # Test tuning_report
+        history = []
+        report = MLJTuning.tuning_report(tuning, history, state)
+        @test haskey(report, :plotting)
+        @test report.plotting isa NamedTuple
+    end
+
+    # ========================================================================
+    # Test with Different Skip Options
+    # ========================================================================
+
+    @testset "Skip Options" begin
+        # Note: This test requires a proper MLJ model, not a simple struct
+        # Using MockModel from the integration test
+        mutable struct TestModel <: MLJBase.Deterministic
+            x::Float64
+        end
+        TestModel(; x=0.5) = TestModel(x)
+
+        r = range(Float64, :x, lower=0.0, upper=1.0)
+        model = TestModel()
+
+        # Test with skip=:auto
+        tuning_auto = SobolSequence(skip=:auto)
+        state_auto = MLJTuning.setup(tuning_auto, model, [r], 100, 0)
+        @test length(state_auto.models) == 100
+
+        # Test with explicit skip
+        tuning_skip = SobolSequence(skip=7)
+        state_skip = MLJTuning.setup(tuning_skip, model, [r], 100, 0)
+        @test length(state_skip.models) == 100
+    end
+
+    # ========================================================================
+    # Test Random Shift
+    # ========================================================================
+
+    @testset "Random Shift" begin
+        # Create a simple mock model
+        mutable struct TestModel2 <: MLJBase.Deterministic
+            x::Float64
+        end
+        TestModel2(; x=0.5) = TestModel2(x)
+
+        r = range(Float64, :x, lower=0.0, upper=1.0)
+        model = TestModel2()
+
+        # Test without random shift
+        tuning_no_shift = SobolSequence(random_shift=false, rng=123)
+        state1 = MLJTuning.setup(tuning_no_shift, model, [r], 10, 0)
+        state2 = MLJTuning.setup(tuning_no_shift, model, [r], 10, 0)
+        # Both should produce models
+        @test length(state1.models) == 10
+        @test length(state2.models) == 10
+
+        # Test with random shift
+        rng1 = Random.MersenneTwister(123)
+        rng2 = Random.MersenneTwister(123)
+        tuning_shift1 = SobolSequence(random_shift=true, rng=rng1)
+        tuning_shift2 = SobolSequence(random_shift=true, rng=rng2)
+        state_shift1 = MLJTuning.setup(tuning_shift1, model, [r], 10, 0)
+        state_shift2 = MLJTuning.setup(tuning_shift2, model, [r], 10, 0)
+        # With same seed, should produce same shifted results
+        @test length(state_shift1.models) == length(state_shift2.models)
+    end
+
+    # ========================================================================
+    # Test Log Scale Support
+    # ========================================================================
+
+    @testset "Log Scale Support" begin
+        # Create range with log scale
+        r = range(Float64, :x, lower=0.1, upper=100.0, scale=:log)
+        bounds, kinds, card = SobolSampling._scaled_bounds_and_kinds([r])
+
+        @test kinds[1] == :numeric
+        # Bounds should be in log space
+        sc = MLJBase.scale(:log)
+        expected_a = transform(MLJBase.Scale, sc, 0.1)
+        expected_b = transform(MLJBase.Scale, sc, 100.0)
+        @test bounds[1][1] ≈ expected_a
+        @test bounds[1][2] ≈ expected_b
+
+        # Test error for invalid log scale range
+        @test_throws ArgumentError begin
+            r_invalid = range(Float64, :x, lower=-1.0, upper=100.0, scale=:log)
+            SobolSampling._scaled_bounds_and_kinds([r_invalid])
+        end
+    end
+
+    # ========================================================================
+    # Test Unbounded Ranges
+    # ========================================================================
+
+    @testset "Unbounded Ranges" begin
+        # Note: Unbounded ranges follow heuristics from LatinHypercube
+        # Bounds are computed in scale space (after transform)
+
+        # Test upper unbounded (lower finite, upper infinite)
+        r_upper_inf = range(Float64, :x, lower=0.0, upper=Inf, origin=1.0, unit=1.0, scale=:linear)
+        bounds, kinds, card = SobolSampling._scaled_bounds_and_kinds([r_upper_inf])
+        @test isfinite(bounds[1][1]) && isfinite(bounds[1][2])
+        # When lower is finite and upper is infinite: (transform(lower), transform(lower) + 2*unit)
+        # Since scale is :linear, transform(0.0) = 0.0
+        @test bounds[1] == (0.0, 2.0)
+
+        # Test lower unbounded (lower infinite, upper finite)
+        r_lower_inf = range(Float64, :x, lower=-Inf, upper=10.0, origin=5.0, unit=2.0, scale=:linear)
+        bounds, kinds, card = SobolSampling._scaled_bounds_and_kinds([r_lower_inf])
+        @test isfinite(bounds[1][1]) && isfinite(bounds[1][2])
+        # When lower is infinite and upper is finite: (transform(upper) - 2*unit, transform(upper))
+        # Since scale is :linear, transform(10.0) = 10.0
+        @test bounds[1] == (6.0, 10.0)
+
+        # Test fully unbounded (both lower and upper infinite)
+        r_both_inf = range(Float64, :x, lower=-Inf, upper=Inf, origin=0.0, unit=5.0, scale=:linear)
+        bounds, kinds, card = SobolSampling._scaled_bounds_and_kinds([r_both_inf])
+        @test isfinite(bounds[1][1]) && isfinite(bounds[1][2])
+        # When both are infinite: (transform(origin) - unit, transform(origin) + unit)
+        # Since scale is :linear, transform(0.0) = 0.0
+        @test bounds[1] == (-5.0, 5.0)
+    end
+
+    # ========================================================================
+    # Test Edge Cases
+    # ========================================================================
+
+    @testset "Edge Cases" begin
+        # Test single parameter
+        mutable struct SimpleModel <: MLJBase.Deterministic
+            x::Float64
+        end
+        SimpleModel(; x=0.5) = SimpleModel(x)
+
+        r = range(Float64, :x, lower=0.0, upper=1.0)
+        tuning = SobolSequence()
+        model = SimpleModel()
+        state = MLJTuning.setup(tuning, model, r, 10, 0)  # Single range, not vector
+
+        @test length(state.models) == 10
+        @test state.fields == [:x]
+
+        models, _ = MLJTuning.models(tuning, model, [], state, 1, 0)
+        @test length(models) == 10  # Returns all remaining
+
+        # Test empty range (should handle gracefully)
+        # Using a simple model with no parameters to tune
+        mutable struct NoParamsModel <: MLJBase.Deterministic
+            dummy::Int  # Need at least one field to avoid issues
+        end
+        NoParamsModel(; kwargs...) = NoParamsModel(1)
+
+        model_no_params = NoParamsModel()
+        state_empty = MLJTuning.setup(tuning, model_no_params, [], 10, 0)
+        @test length(state_empty.models) == 10
+        @test isempty(state_empty.fields)
+    end
+
+    # ========================================================================
+    # Test Error Handling
+    # ========================================================================
+
+    @testset "Error Handling" begin
+        # Test log scale with zero lower bound
+        r_log_zero = range(Float64, :x, lower=0.0, upper=100.0, scale=:log)
+        @test_throws ArgumentError SobolSampling._scaled_bounds_and_kinds([r_log_zero])
+
+    end
+
+end

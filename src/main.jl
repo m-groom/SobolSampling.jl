@@ -207,6 +207,13 @@ function MLJTuning.setup(tuning::SobolSequence, model, range, n::Int, verbosity:
     ranges = range isa AbstractVector ? collect(range) : [range]
     d = length(ranges)
 
+    if d == 0
+        # No parameters to tune - just create n copies of the model
+        models = [deepcopy(model) for _ in 1:n]
+        state = (models=models, fields=Symbol[], parameter_scales=Symbol[])
+        return state
+    end
+
     bounds, kinds, card = _scaled_bounds_and_kinds(ranges)
     U = _unit_sobol_matrix(d, n, tuning.skip, tuning.random_shift, tuning.rng)
     cols = _rescale_plan(U, ranges, bounds, kinds, card)
