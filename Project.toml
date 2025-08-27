@@ -11,7 +11,7 @@ Sobol = "ed01d8cd-4d21-5b2a-85b4-cc3bdc58bad4"
 
 [compat]
 Aqua = "0.8"
-MLJBase = "1.8"
+MLJBase = "1.7"
 MLJTuning = "0.8"
 Random = "1.9, 1.10, 1.11"
 Sobol = "1.5"
