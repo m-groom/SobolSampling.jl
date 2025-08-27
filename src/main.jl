@@ -20,7 +20,7 @@ hyperparameter `range`.
 - A single one-dimensional MLJ `ParamRange`
 - A vector of such ranges
 
-Both `NumericRange`s and `NominalRange`s are supported. Numeric ranges honor
+Both `NumericRange`s and `NominalRange`s are supported. Numeric ranges honour
 their `scale` (e.g. `:log`), and integer-typed numeric ranges are rounded after
 inverse scaling. Unbounded numeric ranges are bounded following the same
 heuristics used in `LatinHypercube`, centered using `origin`/`unit`.
@@ -29,10 +29,10 @@ See also: Sobol.jl (`SobolSeq`, `skip`), and `TunedModel` docs for usage.
 """
 
 # --------------------------
-# Strategy type and ctor
+# Strategy type
 # --------------------------
 
-mutable struct SobolSequence <: MLJTuning.  TuningStrategy
+mutable struct SobolSequence <: MLJTuning.TuningStrategy
     skip::Union{Int,Symbol}
     random_shift::Bool
     rng::Random.AbstractRNG
@@ -40,13 +40,23 @@ end
 
 function SobolSequence(; skip=:auto, random_shift=false, rng=Random.GLOBAL_RNG)
     _rng = rng isa Integer ? Random.MersenneTwister(rng) : rng
-    # TODO: make this part of MLJTuning.clean!(tuning::SobolSequence)
-    if skip isa Symbol && skip !== :auto
-        throw(ArgumentError("`skip` must be :auto or a nonnegative integer."))
-    elseif skip isa Integer && skip < 0
-        throw(ArgumentError("`skip` must be nonnegative."))
+    seq = SobolSequence(skip, random_shift, _rng)
+    message = MLJTuning.clean!(seq)
+    isempty(message) || @warn message
+
+    return seq
+end
+
+function MLJTuning.clean!(tuning::SobolSequence)
+    err = ""
+    if tuning.skip isa Symbol && tuning.skip !== :auto
+        err *= "`skip` must be :auto or a nonnegative integer. Resetting to :auto."
+        tuning.skip = :auto
+    elseif tuning.skip isa Integer && tuning.skip < 0
+        err *= "`skip` must be nonnegative. Resetting to 0"
+        tuning.skip = 0
     end
-    return SobolSequence(skip, random_shift, _rng)
+    return err
 end
 
 # --------------------------
