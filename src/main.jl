@@ -63,6 +63,34 @@ end
 # Range helpers
 # --------------------------
 
+# Normalise user-provided `range` to a concrete vector of one-dimensional ranges.
+# Accepts:
+# - a single NumericRange/NominalRange
+# - any finite iterable of NumericRange/NominalRange values (including AbstractVector)
+function _normalise_ranges(range)
+    if range isa Union{NumericRange,NominalRange}
+        return [range]
+    end
+
+    iter_size = Base.IteratorSize(typeof(range))
+    if !(iter_size isa Union{Base.HasLength,Base.HasShape})
+        throw(
+            ArgumentError(
+                "Unsupported range. SobolSequence expects a single ParamRange or a finite iterator of ParamRange objects.",
+            ),
+        )
+    end
+
+    ranges = collect(range)
+    all(r -> r isa Union{NumericRange,NominalRange}, ranges) || throw(
+        ArgumentError(
+            "Unsupported range elements. SobolSequence supports only NumericRange and NominalRange values.",
+        ),
+    )
+
+    return ranges
+end
+
 # Produce scaled-space bounds for each range and remember types.
 # For NumericRange, work in "scale space" then inverse_transform back.
 # For NominalRange, just record the number of categories.
@@ -223,25 +251,30 @@ end
 # Strategy API
 # --------------------------
 
-function MLJTuning.setup(tuning::SobolSequence, model, range, n::Int, verbosity::Int)
-    ranges = range isa AbstractVector ? collect(range) : [range]
+function MLJTuning.setup(
+    tuning::SobolSequence, model, range, n::Union{Nothing,Integer}, verbosity::Integer
+)
+    ranges = _normalise_ranges(range)
+    n_eff = isnothing(n) ? MLJTuning.default_n(tuning, ranges) : Int(n)
+    n_eff < 0 && throw(ArgumentError("`n` must be nonnegative, got $n_eff."))
+
     d = length(ranges)
 
     if d == 0
-        # No parameters to tune - just create n copies of the model
-        models = [deepcopy(model) for _ in 1:n]
+        # No parameters to tune - just create n_eff copies of the model
+        models = [deepcopy(model) for _ in 1:n_eff]
         state = (models=models, fields=Symbol[], parameter_scales=Symbol[])
         return state
     end
 
     bounds, kinds, card = _scaled_bounds_and_kinds(ranges)
-    U = _unit_sobol_matrix(d, n, tuning.skip, tuning.random_shift, tuning.rng)
+    U = _unit_sobol_matrix(d, n_eff, tuning.skip, tuning.random_shift, tuning.rng)
     cols = _rescale_plan(U, ranges, bounds, kinds, card)
 
     fields = map(r -> r.field, ranges)
     parameter_scales = scale.(ranges)
 
-    models = _make_models_from_plan(model, fields, cols)  # size n
+    models = _make_models_from_plan(model, fields, cols)  # size n_eff
 
     state = (models=models, fields=fields, parameter_scales=parameter_scales)
     return state
@@ -259,8 +292,16 @@ function MLJTuning.tuning_report(tuning::SobolSequence, history, state)
     (plotting=MLJTuning.plotting_report(state.fields, state.parameter_scales, history),)
 end
 
-# Provide a conservative default when `n` is not specified.
-MLJTuning.default_n(::SobolSequence, range) = 128
+# Provide a dimension-aware default when `n` is not specified.
+function MLJTuning.default_n(::SobolSequence, ranges::AbstractVector)
+    d = length(ranges)
+    d == 0 && return 1
+    return 8^d
+end
+
+function MLJTuning.default_n(tuning::SobolSequence, range)
+    return MLJTuning.default_n(tuning, _normalise_ranges(range))
+end
 
 # Build clones by writing field values from the column-wise plan.
 function _make_models_from_plan(prototype::Model, fields, cols::Vector{<:Vector})

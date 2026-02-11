@@ -154,8 +154,8 @@ using Random
 
         # Test default value
         r = range(Float64, :x, lower=0.0, upper=1.0)
-        @test MLJTuning.default_n(tuning, r) == 128
-        @test MLJTuning.default_n(tuning, [r]) == 128
+        @test MLJTuning.default_n(tuning, r) == 8
+        @test MLJTuning.default_n(tuning, [r, r]) == 8^2
     end
 
     # ========================================================================
